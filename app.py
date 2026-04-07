@@ -212,19 +212,46 @@ def available_markets(df) -> list:
     return sorted(df[nc].dropna().unique().tolist()) if nc and not df.empty else []
 
 
+def _normalize(s) -> str:
+    """Upper + colapsa cualquier whitespace (incluye tabs, nbsp, doble espacio)."""
+    import re
+    return re.sub(r"\s+", " ", str(s).upper().strip())
+
+
+def _match_market(series: pd.Series, target: str) -> pd.Series:
+    """
+    Match robusto contra nombres del CFTC (que tienen whitespace inconsistente).
+    Cascada: exacto → normalizado → head antes del ' - ' → todos los tokens significativos.
+    """
+    target_n = _normalize(target)
+    series_n = series.fillna("").astype(str).map(_normalize)
+
+    # 1) Exacto normalizado
+    mask = series_n == target_n
+    if mask.any():
+        return mask
+
+    # 2) Si target tiene " - EXCHANGE", probar solo la parte izquierda del guion
+    if " - " in target_n:
+        head = target_n.split(" - ")[0].strip()
+        mask = series_n.str.startswith(head + " -") | series_n.str.startswith(head + "-") | (series_n == head)
+        if mask.any():
+            return mask
+
+    # 3) Todos los tokens significativos (>2 chars) como substring, en cualquier orden
+    tokens = [t for t in target_n.replace("-", " ").split() if len(t) > 2]
+    if tokens:
+        mask = series_n.apply(lambda x: all(t in x for t in tokens))
+    return mask
+
+
 def parse_cot(df: pd.DataFrame, market_search: str, rcfg: dict) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
     nc, dc = _name_col(df), _date_col(df)
     if not nc or not dc:
         return pd.DataFrame()
-    # Exact match (case-insensitive) — names verified against real CFTC data
-    mask = df[nc].str.upper() == market_search.upper()
-    # Fallback to token match if exact match returns nothing
-    if mask.sum() == 0:
-        tokens = [t for t in market_search.upper().split() if len(t) > 1]
-        mask = df[nc].str.upper().apply(
-            lambda x: all(t in str(x) for t in tokens) if pd.notna(x) else False)
+    mask = _match_market(df[nc], market_search)
     df_m = df[mask].copy()
     if df_m.empty:
         return pd.DataFrame()
@@ -399,27 +426,41 @@ if df.empty:
     st.error(f"**Sin datos** para `{market_search}` en `{report_key}`.")
     if not raw.empty:
         avail = available_markets(raw)
-        tokens = [t for t in market_search.upper().split() if len(t) > 1]
-        auto_hits = [m for m in avail
-                     if m.upper() == market_search.upper()
-                     or any(t in m.upper() for t in tokens)]
-        if auto_hits:
-            st.markdown(f"#### 🔍 Posibles coincidencias para `{market_search}`")
-            st.dataframe(pd.DataFrame({"Nombre exacto en CFTC": auto_hits}), width='stretch')
-        st.markdown(f"#### 📋 Todos los mercados ({len(avail)}) — descarga el CSV")
-        csv_all = pd.DataFrame({"market_name": avail}).to_csv(index=False).encode()
-        st.download_button(
-            label=f"⬇️  Descargar lista completa ({len(avail)} mercados)",
-            data=csv_all,
-            file_name="cftc_markets.csv",
-            mime="text/csv",
+
+        # Selector manual en vivo: si el auto-match falla, que el usuario elija
+        st.markdown("#### 🎯 Selecciona el nombre exacto del CFTC")
+        tokens = [t for t in _normalize(market_search).replace("-", " ").split() if len(t) > 2]
+        pre_filtered = [m for m in avail if any(t in _normalize(m) for t in tokens)] or avail
+        manual_pick = st.selectbox(
+            "Mercados que contienen alguna palabra clave de tu selección:",
+            options=["— elegir —"] + pre_filtered,
+            key="manual_market_picker",
         )
-        q = st.text_input("🔍 Filtrar en tiempo real:", placeholder="EURO, PESO, GOLD, S&P, CRUDE...")
-        hits = [m for m in avail if q.upper() in m.upper()] if q else avail
-        st.dataframe(pd.DataFrame({"Nombre en CFTC": hits[:400]}), width='stretch')
+        if manual_pick and manual_pick != "— elegir —":
+            df = parse_cot(raw, manual_pick, rcfg)
+            if not df.empty:
+                st.success(f"✅ Usando: `{manual_pick}`")
+                market_search = manual_pick  # para el resto del render
+            else:
+                st.warning("Ese nombre tampoco produjo filas. Revisa el tipo de reporte.")
+
+        if df.empty:
+            st.markdown(f"#### 📋 Todos los mercados ({len(avail)}) — descarga el CSV")
+            csv_all = pd.DataFrame({"market_name": avail}).to_csv(index=False).encode()
+            st.download_button(
+                label=f"⬇️  Descargar lista completa ({len(avail)} mercados)",
+                data=csv_all,
+                file_name="cftc_markets.csv",
+                mime="text/csv",
+            )
+            q = st.text_input("🔍 Filtrar en tiempo real:", placeholder="EURO, PESO, GOLD, S&P, CRUDE...")
+            hits = [m for m in avail if q.upper() in m.upper()] if q else avail
+            st.dataframe(pd.DataFrame({"Nombre en CFTC": hits[:400]}), width='stretch')
     else:
         st.warning("Descarga fallida. Revisa el log ↑ para el error exacto.")
-    st.stop()
+
+    if df.empty:
+        st.stop()
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────────
 s = signals(df, cot_win)
