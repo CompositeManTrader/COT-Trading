@@ -192,19 +192,49 @@ def load_cot(years: list, prefix: str) -> tuple:
     return combined, logs
 
 
-def _name_col(df):
-    for c in ["Market_and_Exchange_Names", "Contract_Market_Name", "Market and Exchange Names"]:
-        if c in df.columns:
-            return c
+def _canon(name) -> str:
+    """Forma canónica: solo alfanuméricos en mayúsculas.
+    Permite matchear 'Noncommercial Positions-Long (All)' ==
+    'Noncommercial_Positions_Long_All' == 'noncommercialpositionslongall'."""
+    import re
+    return re.sub(r"[^A-Z0-9]", "", str(name).upper())
+
+
+def _col_index(df) -> dict:
+    """Build {canónica → nombre real} para buscar columnas tolerante a formato."""
+    return {_canon(c): c for c in df.columns}
+
+
+def _find_col(idx: dict, *candidates):
+    """Devuelve el nombre real de la primera columna candidata que exista."""
+    for cand in candidates:
+        actual = idx.get(_canon(cand))
+        if actual is not None:
+            return actual
     return None
+
+
+def _name_col(df):
+    idx = _col_index(df)
+    return _find_col(idx,
+        "Market_and_Exchange_Names",
+        "Market and Exchange Names",
+        "Contract_Market_Name")
 
 
 def _date_col(df):
-    for c in ["Report_Date_as_MM_DD_YYYY", "Report_Date_as_YYYY-MM-DD",
-              "As_of_Date_In_Form_YYMMDD", "Report Date"]:
-        if c in df.columns:
-            return c
-    return None
+    idx = _col_index(df)
+    return _find_col(idx,
+        # Disaggregated / TFF
+        "Report_Date_as_YYYY-MM-DD",
+        "Report Date as YYYY-MM-DD",
+        "Report_Date_as_MM_DD_YYYY",
+        "Report Date as MM_DD_YYYY",
+        # Legacy (annual.txt) — usa "As of Date in Form …"
+        "As of Date in Form YYYY-MM-DD",
+        "As_of_Date_In_Form_YYYY-MM-DD",
+        "As of Date in Form YYMMDD",
+        "As_of_Date_In_Form_YYMMDD")
 
 
 def available_markets(df) -> list:
@@ -256,22 +286,35 @@ def parse_cot(df: pd.DataFrame, market_search: str, rcfg: dict) -> pd.DataFrame:
     if df_m.empty:
         return pd.DataFrame()
     # Parseo robusto: la columna Report_Date_as_MM_DD_YYYY trae "12/31/2024".
-    # Forzamos el formato para evitar que pandas lo infiera como DD/MM.
+    # En Legacy puede ser "2024-12-31" (YYYY-MM-DD). Probamos ambos.
     raw_date = df_m[dc].astype(str).str.strip()
-    df_m["Date"] = pd.to_datetime(raw_date, format="%m/%d/%Y", errors="coerce")
-    # Fallback para otros layouts (YYYY-MM-DD, YYMMDD, etc.)
+    df_m["Date"] = pd.to_datetime(raw_date, format="%Y-%m-%d", errors="coerce")
+    mask_nat = df_m["Date"].isna()
+    if mask_nat.any():
+        df_m.loc[mask_nat, "Date"] = pd.to_datetime(
+            raw_date[mask_nat], format="%m/%d/%Y", errors="coerce")
     mask_nat = df_m["Date"].isna()
     if mask_nat.any():
         df_m.loc[mask_nat, "Date"] = pd.to_datetime(raw_date[mask_nat], errors="coerce")
     df_m = df_m.dropna(subset=["Date"]).sort_values("Date").drop_duplicates("Date")
 
-    def _n(col):
-        return pd.to_numeric(df_m.get(col, pd.Series(np.nan, index=df_m.index)), errors="coerce")
+    # Lookup canónico de columnas numéricas: tolera 'Open Interest (All)'
+    # equivalente a 'Open_Interest_All' sin listar cada variante.
+    idx = _col_index(df_m)
+
+    def _n(*candidates):
+        """Prueba varios nombres candidatos (Nonrept vs Nonreportable, etc.)."""
+        col = _find_col(idx, *candidates)
+        if col is None:
+            return pd.Series(np.nan, index=df_m.index)
+        return pd.to_numeric(df_m[col], errors="coerce")
 
     df_m["OI"]      = _n("Open_Interest_All")
     df_m["NC_Long"] = _n(rcfg["long_nc"]);  df_m["NC_Short"] = _n(rcfg["short_nc"])
     df_m["CM_Long"] = _n(rcfg["long_cm"]);  df_m["CM_Short"] = _n(rcfg["short_cm"])
-    df_m["NR_Long"] = _n(rcfg["long_nr"]);  df_m["NR_Short"] = _n(rcfg["short_nr"])
+    # Non-Reportable: Legacy usa 'Nonreportable', Disaggregated usa 'NonRept'
+    df_m["NR_Long"]  = _n(rcfg["long_nr"],  "Nonreportable_Positions_Long_All",  "Nonrept_Positions_Long_All")
+    df_m["NR_Short"] = _n(rcfg["short_nr"], "Nonreportable_Positions_Short_All", "Nonrept_Positions_Short_All")
     df_m["Net_NC"]  = df_m["NC_Long"] - df_m["NC_Short"]
     df_m["Net_CM"]  = df_m["CM_Long"] - df_m["CM_Short"]
     df_m["Net_NR"]  = df_m["NR_Long"] - df_m["NR_Short"]
@@ -421,6 +464,23 @@ with st.expander("📡  Log de descarga CFTC", expanded=not has_data):
         st.markdown(f"`{log}`")
     if not raw.empty:
         st.markdown(f"`Total filas: {len(raw):,} · Mercados disponibles: {raw[_name_col(raw)].nunique() if _name_col(raw) else '?'}`")
+        # Diagnóstico: qué columnas lógicas se resolvieron y a qué nombre real
+        idx = _col_index(raw)
+        resolved = {
+            "Name":     _find_col(idx, "Market_and_Exchange_Names", "Market and Exchange Names"),
+            "Date":     _find_col(idx, "Report_Date_as_YYYY-MM-DD", "Report_Date_as_MM_DD_YYYY"),
+            "OI":       _find_col(idx, "Open_Interest_All"),
+            "NC_Long":  _find_col(idx, rcfg["long_nc"]),
+            "NC_Short": _find_col(idx, rcfg["short_nc"]),
+            "CM_Long":  _find_col(idx, rcfg["long_cm"]),
+            "CM_Short": _find_col(idx, rcfg["short_cm"]),
+            "NR_Long":  _find_col(idx, rcfg["long_nr"]),
+            "NR_Short": _find_col(idx, rcfg["short_nr"]),
+        }
+        st.markdown("**Columnas resueltas:**")
+        for k, v in resolved.items():
+            icon = "✅" if v else "❌"
+            st.markdown(f"`{icon} {k:<9} → {v or '(no encontrada)'}`")
 
 if df.empty:
     st.error(f"**Sin datos** para `{market_search}` en `{report_key}`.")
