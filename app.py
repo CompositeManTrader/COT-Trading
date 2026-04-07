@@ -1,12 +1,6 @@
 """
-COT Dashboard — Commitment of Traders Visualizer  v2
-Fuente de datos: CFTC (Commodity Futures Trading Commission)
-
-Fixes v2:
-- Prefijos URL correctos: fut_xls (Legacy) / fut_disagg_txt / fut_fin_txt
-- Esquemas de columnas distintos por reporte (Legacy / Disaggregated / Financial TFF)
-- Búsqueda de mercados por tokens (tolerante a variaciones de nombre)
-- Diagnóstico interactivo: muestra mercados disponibles si no hay match
+COT Dashboard — Commitment of Traders Visualizer  v3
+Fuente: CFTC (Commodity Futures Trading Commission)
 """
 
 import streamlit as st
@@ -19,156 +13,158 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
-# ─── PAGE CONFIG ─────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="COT Dashboard", page_icon="📊",
                    layout="wide", initial_sidebar_state="expanded")
 
-# ─── CUSTOM CSS ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
-html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
-.stApp { background: #0d1117; color: #e6edf3; }
-[data-testid="stSidebar"] { background: #161b22 !important; border-right: 1px solid #21262d; }
-[data-testid="stSidebar"] label {
-    color: #8b949e !important; font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.metric-card {
-    background: #161b22; border: 1px solid #21262d; border-radius: 6px;
-    padding: 16px 20px; text-align: center; font-family: 'IBM Plex Mono', monospace; }
-.metric-label { font-size:.68rem; color:#8b949e; text-transform:uppercase; letter-spacing:.1em; margin-bottom:6px; }
-.metric-value { font-size:1.35rem; font-weight:600; line-height:1; }
-.metric-delta { font-size:.73rem; margin-top:4px; }
-.positive { color:#3fb950; } .negative { color:#f85149; } .neutral { color:#58a6ff; }
-.main-title {
-    font-family:'IBM Plex Mono',monospace; font-size:1.55rem; font-weight:600;
-    color:#e6edf3; letter-spacing:-.02em;
-    border-bottom:1px solid #21262d; padding-bottom:12px; margin-bottom:4px; }
-.subtitle { font-size:.78rem; color:#8b949e; font-family:'IBM Plex Mono',monospace; margin-bottom:20px; }
-.section-header {
-    font-family:'IBM Plex Mono',monospace; font-size:.68rem; text-transform:uppercase;
-    letter-spacing:.15em; color:#58a6ff; border-left:3px solid #58a6ff;
-    padding-left:10px; margin:22px 0 12px 0; }
-.info-box {
-    background:#161b22; border:1px solid #21262d; border-left:3px solid #58a6ff;
-    border-radius:4px; padding:12px 16px; font-size:.83rem; color:#8b949e; line-height:1.6; }
-.info-box strong { color:#e6edf3; }
-.warn-box {
-    background:#2d1f00; border:1px solid #bb8009; border-left:3px solid #d29922;
-    border-radius:4px; padding:12px 16px; font-size:.83rem; color:#d29922; line-height:1.6; }
-.signal-bull { background:#0d4429; color:#3fb950; border:1px solid #3fb950; border-radius:20px; padding:4px 14px; font-family:'IBM Plex Mono',monospace; font-size:.8rem; font-weight:600; display:inline-block; }
-.signal-bear { background:#3d1a1a; color:#f85149; border:1px solid #f85149; border-radius:20px; padding:4px 14px; font-family:'IBM Plex Mono',monospace; font-size:.8rem; font-weight:600; display:inline-block; }
-.signal-neutral { background:#1c2a3a; color:#58a6ff; border:1px solid #58a6ff; border-radius:20px; padding:4px 14px; font-family:'IBM Plex Mono',monospace; font-size:.8rem; font-weight:600; display:inline-block; }
+html,body,[class*="css"]{font-family:'IBM Plex Sans',sans-serif;}
+.stApp{background:#0d1117;color:#e6edf3;}
+[data-testid="stSidebar"]{background:#161b22!important;border-right:1px solid #21262d;}
+[data-testid="stSidebar"] label{color:#8b949e!important;font-family:'IBM Plex Mono',monospace;font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;}
+.metric-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:16px 20px;text-align:center;font-family:'IBM Plex Mono',monospace;}
+.metric-label{font-size:.68rem;color:#8b949e;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+.metric-value{font-size:1.35rem;font-weight:600;line-height:1;}
+.metric-delta{font-size:.73rem;margin-top:4px;}
+.positive{color:#3fb950;}.negative{color:#f85149;}.neutral{color:#58a6ff;}
+.main-title{font-family:'IBM Plex Mono',monospace;font-size:1.55rem;font-weight:600;color:#e6edf3;letter-spacing:-.02em;border-bottom:1px solid #21262d;padding-bottom:12px;margin-bottom:4px;}
+.subtitle{font-size:.78rem;color:#8b949e;font-family:'IBM Plex Mono',monospace;margin-bottom:20px;}
+.section-header{font-family:'IBM Plex Mono',monospace;font-size:.68rem;text-transform:uppercase;letter-spacing:.15em;color:#58a6ff;border-left:3px solid #58a6ff;padding-left:10px;margin:22px 0 12px 0;}
+.info-box{background:#161b22;border:1px solid #21262d;border-left:3px solid #58a6ff;border-radius:4px;padding:12px 16px;font-size:.83rem;color:#8b949e;line-height:1.6;}
+.info-box strong{color:#e6edf3;}
+.signal-bull{background:#0d4429;color:#3fb950;border:1px solid #3fb950;border-radius:20px;padding:4px 14px;font-family:'IBM Plex Mono',monospace;font-size:.8rem;font-weight:600;display:inline-block;}
+.signal-bear{background:#3d1a1a;color:#f85149;border:1px solid #f85149;border-radius:20px;padding:4px 14px;font-family:'IBM Plex Mono',monospace;font-size:.8rem;font-weight:600;display:inline-block;}
+.signal-neutral{background:#1c2a3a;color:#58a6ff;border:1px solid #58a6ff;border-radius:20px;padding:4px 14px;font-family:'IBM Plex Mono',monospace;font-size:.8rem;font-weight:600;display:inline-block;}
 </style>
 """, unsafe_allow_html=True)
 
-# ─── REPORT CONFIG ───────────────────────────────────────────────────────────────
-# Cada reporte tiene prefijo de URL distinto + esquema de columnas distinto
+# ─── CONFIG ───────────────────────────────────────────────────────────────────────
+CFTC_BASE = "https://www.cftc.gov/files/dea/history"
+
 REPORTS = {
     "Legacy — Futures Only": {
-        "prefix":    "fut_xls",          # <-- URL correcta para Legacy
-        "long_nc":   "Noncommercial_Positions_Long_All",
-        "short_nc":  "Noncommercial_Positions_Short_All",
-        "long_cm":   "Commercial_Positions_Long_All",
-        "short_cm":  "Commercial_Positions_Short_All",
-        "long_nr":   "Nonrept_Positions_Long_All",
-        "short_nr":  "Nonrept_Positions_Short_All",
-        "nc_label":  "Non-Commercial (Specs)",
-        "cm_label":  "Commercial (Hedgers)",
+        "prefix": "fut_xls",
+        "long_nc": "Noncommercial_Positions_Long_All",
+        "short_nc": "Noncommercial_Positions_Short_All",
+        "long_cm": "Commercial_Positions_Long_All",
+        "short_cm": "Commercial_Positions_Short_All",
+        "long_nr": "Nonrept_Positions_Long_All",
+        "short_nr": "Nonrept_Positions_Short_All",
+        "nc_label": "Non-Commercial (Specs)",
+        "cm_label": "Commercial (Hedgers)",
         "description": "Reporte clásico. Cubre <strong>Forex, Commodities y Bonos</strong>.",
     },
     "Legacy — Combined (Futures+Options)": {
-        "prefix":    "com_xls",
-        "long_nc":   "Noncommercial_Positions_Long_All",
-        "short_nc":  "Noncommercial_Positions_Short_All",
-        "long_cm":   "Commercial_Positions_Long_All",
-        "short_cm":  "Commercial_Positions_Short_All",
-        "long_nr":   "Nonrept_Positions_Long_All",
-        "short_nr":  "Nonrept_Positions_Short_All",
-        "nc_label":  "Non-Commercial (Specs)",
-        "cm_label":  "Commercial (Hedgers)",
-        "description": "Legacy combinado (futuros + opciones). Mismo universo que Legacy.",
+        "prefix": "com_xls",
+        "long_nc": "Noncommercial_Positions_Long_All",
+        "short_nc": "Noncommercial_Positions_Short_All",
+        "long_cm": "Commercial_Positions_Long_All",
+        "short_cm": "Commercial_Positions_Short_All",
+        "long_nr": "Nonrept_Positions_Long_All",
+        "short_nr": "Nonrept_Positions_Short_All",
+        "nc_label": "Non-Commercial (Specs)",
+        "cm_label": "Commercial (Hedgers)",
+        "description": "Legacy combinado futuros + opciones.",
     },
     "Disaggregated — Futures Only": {
-        "prefix":    "fut_disagg_txt",
-        "long_nc":   "M_Money_Positions_Long_All",
-        "short_nc":  "M_Money_Positions_Short_All",
-        "long_cm":   "Prod_Merc_Positions_Long_All",
-        "short_cm":  "Prod_Merc_Positions_Short_All",
-        "long_nr":   "NonRept_Positions_Long_All",
-        "short_nr":  "NonRept_Positions_Short_All",
-        "nc_label":  "Managed Money (Specs)",
-        "cm_label":  "Prod/Merchants (Hedgers)",
+        "prefix": "fut_disagg_txt",
+        "long_nc": "M_Money_Positions_Long_All",
+        "short_nc": "M_Money_Positions_Short_All",
+        "long_cm": "Prod_Merc_Positions_Long_All",
+        "short_cm": "Prod_Merc_Positions_Short_All",
+        "long_nr": "NonRept_Positions_Long_All",
+        "short_nr": "NonRept_Positions_Short_All",
+        "nc_label": "Managed Money (Specs)",
+        "cm_label": "Prod/Merchants (Hedgers)",
         "description": "Desglosa más categorías. Ideal para <strong>energía, metales y granos</strong>.",
     },
     "Financial TFF — Futures Only": {
-        "prefix":    "fut_fin_txt",
-        "long_nc":   "Lev_Money_Positions_Long_All",
-        "short_nc":  "Lev_Money_Positions_Short_All",
-        "long_cm":   "Asset_Mgr_Positions_Long_All",
-        "short_cm":  "Asset_Mgr_Positions_Short_All",
-        "long_nr":   "Other_Rept_Positions_Long_All",
-        "short_nr":  "Other_Rept_Positions_Short_All",
-        "nc_label":  "Leveraged Money (Specs)",
-        "cm_label":  "Asset Managers",
+        "prefix": "fut_fin_txt",
+        "long_nc": "Lev_Money_Positions_Long_All",
+        "short_nc": "Lev_Money_Positions_Short_All",
+        "long_cm": "Asset_Mgr_Positions_Long_All",
+        "short_cm": "Asset_Mgr_Positions_Short_All",
+        "long_nr": "Other_Rept_Positions_Long_All",
+        "short_nr": "Other_Rept_Positions_Short_All",
+        "nc_label": "Leveraged Money (Specs)",
+        "cm_label": "Asset Managers",
         "description": "Específico para <strong>índices bursátiles y tasas de interés</strong>.",
     },
 }
 
 MARKETS = {
     "— FOREX —": None,
-    "EUR/USD  ·  Euro FX":          "EURO FX",
-    "GBP/USD  ·  British Pound":    "BRITISH POUND",
-    "JPY/USD  ·  Japanese Yen":     "JAPANESE YEN",
-    "CHF/USD  ·  Swiss Franc":      "SWISS FRANC",
-    "AUD/USD  ·  Australian $":     "AUSTRALIAN DOLLAR",
-    "CAD/USD  ·  Canadian $":       "CANADIAN DOLLAR",
-    "NZD/USD  ·  New Zealand $":    "NEW ZEALAND DOLLAR",
-    "MXN/USD  ·  Peso Mexicano":    "MEXICAN PESO",
+    "EUR/USD  ·  Euro FX":       "EURO FX",
+    "GBP/USD  ·  British Pound": "BRITISH POUND",
+    "JPY/USD  ·  Japanese Yen":  "JAPANESE YEN",
+    "CHF/USD  ·  Swiss Franc":   "SWISS FRANC",
+    "AUD/USD  ·  Australian $":  "AUSTRALIAN DOLLAR",
+    "CAD/USD  ·  Canadian $":    "CANADIAN DOLLAR",
+    "NZD/USD  ·  New Zealand $": "NEW ZEALAND DOLLAR",
+    "MXN/USD  ·  Peso Mexicano": "MEXICAN PESO",
     "— ÍNDICES BURSÁTILES —": None,
-    "S&P 500":                      "S&P 500 STOCK INDEX",
-    "Nasdaq-100":                   "NASDAQ-100 STOCK INDEX",
-    "Dow Jones Industrial":         "DOW JONES INDUSTRIAL AVG",
-    "Russell 2000":                 "RUSSELL 2000",
-    "— COMMODITIES ENERGÍA —": None,
-    "Crude Oil (WTI)":              "CRUDE OIL, LIGHT SWEET",
-    "Natural Gas":                  "NATURAL GAS",
+    "S&P 500":                   "S&P 500 STOCK INDEX",
+    "Nasdaq-100":                "NASDAQ-100 STOCK INDEX",
+    "Dow Jones Industrial":      "DOW JONES INDUSTRIAL AVG",
+    "Russell 2000":              "RUSSELL 2000",
+    "— ENERGÍA —": None,
+    "Crude Oil (WTI)":           "CRUDE OIL, LIGHT SWEET",
+    "Natural Gas":               "NATURAL GAS",
     "— METALES —": None,
-    "Gold":                         "GOLD",
-    "Silver":                       "SILVER",
-    "Copper":                       "COPPER",
+    "Gold":                      "GOLD",
+    "Silver":                    "SILVER",
+    "Copper":                    "COPPER",
     "— GRANOS —": None,
-    "Corn":                         "CORN",
-    "Wheat (CBOT)":                 "WHEAT",
-    "Soybeans":                     "SOYBEANS",
+    "Corn":                      "CORN",
+    "Wheat (CBOT)":              "WHEAT",
+    "Soybeans":                  "SOYBEANS",
     "— TASAS DE INTERÉS —": None,
-    "10Y T-Note":                   "10-YEAR U.S. TREASURY NOTES",
-    "2Y T-Note":                    "2-YEAR U.S. TREASURY NOTES",
-    "30Y T-Bond":                   "U.S. TREASURY BONDS",
+    "10Y T-Note":                "10-YEAR U.S. TREASURY NOTES",
+    "2Y T-Note":                 "2-YEAR U.S. TREASURY NOTES",
+    "30Y T-Bond":                "U.S. TREASURY BONDS",
 }
 
-CFTC_BASE = "https://www.cftc.gov/files/dea/history"
+# ─── DATA ────────────────────────────────────────────────────────────────────────
+HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/124.0.0.0 Safari/537.36"),
+    "Accept": "application/zip,*/*",
+}
 
-# ─── DATA LAYER ──────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
-def _fetch_year(year: int, prefix: str) -> pd.DataFrame:
+def fetch_year(year: int, prefix: str) -> tuple[pd.DataFrame, str]:
+    """Returns (dataframe, status_message)."""
     url = f"{CFTC_BASE}/{prefix}_{year}.zip"
     try:
-        r = requests.get(url, timeout=40)
-        r.raise_for_status()
+        r = requests.get(url, headers=HEADERS, timeout=60)
+        if r.status_code == 404:
+            return pd.DataFrame(), f"⚠️ {year}: archivo no publicado aún (404)"
+        if r.status_code != 200:
+            return pd.DataFrame(), f"❌ {year}: HTTP {r.status_code}"
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
             fname = sorted(z.namelist())[-1]
             with z.open(fname) as f:
-                return pd.read_csv(f, low_memory=False)
-    except Exception:
-        return pd.DataFrame()
+                df = pd.read_csv(f, low_memory=False)
+        return df, f"✅ {year}: {len(df):,} filas descargadas"
+    except requests.exceptions.ConnectionError as e:
+        return pd.DataFrame(), f"❌ {year}: Error de conexión — {str(e)[:120]}"
+    except zipfile.BadZipFile:
+        return pd.DataFrame(), f"❌ {year}: El archivo descargado no es un ZIP válido"
+    except Exception as e:
+        return pd.DataFrame(), f"❌ {year}: {type(e).__name__} — {str(e)[:120]}"
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_cot(years: list, prefix: str) -> pd.DataFrame:
-    frames = [_fetch_year(y, prefix) for y in years]
-    frames = [f for f in frames if not f.empty]
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+def load_cot(years: list, prefix: str) -> tuple[pd.DataFrame, list]:
+    frames, logs = [], []
+    for y in years:
+        df, msg = fetch_year(y, prefix)
+        logs.append(msg)
+        if not df.empty:
+            frames.append(df)
+    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    return combined, logs
 
 
 def _name_col(df):
@@ -186,7 +182,7 @@ def _date_col(df):
     return None
 
 
-def available_markets(df):
+def available_markets(df) -> list:
     nc = _name_col(df)
     return sorted(df[nc].dropna().unique().tolist()) if nc and not df.empty else []
 
@@ -198,7 +194,6 @@ def parse_cot(df: pd.DataFrame, market_search: str, rcfg: dict) -> pd.DataFrame:
     if not nc or not dc:
         return pd.DataFrame()
 
-    # Búsqueda por tokens independientes (tolerante a "EURO FX - CHICAGO MERCANTILE EXCHANGE")
     tokens = [t for t in market_search.upper().split() if len(t) > 1]
     mask = df[nc].str.upper().apply(
         lambda x: all(t in str(x) for t in tokens) if pd.notna(x) else False)
@@ -229,11 +224,10 @@ def parse_cot(df: pd.DataFrame, market_search: str, rcfg: dict) -> pd.DataFrame:
 
 
 def cot_index(series: pd.Series, window: int = 52) -> pd.Series:
-    mn  = series.rolling(window, min_periods=5).min()
-    mx  = series.rolling(window, min_periods=5).max()
+    mn = series.rolling(window, min_periods=5).min()
+    mx = series.rolling(window, min_periods=5).max()
     rng = mx - mn
-    idx = np.where(rng != 0, (series - mn) / rng * 100, 50.0)
-    return pd.Series(idx, index=series.index)
+    return pd.Series(np.where(rng != 0, (series - mn) / rng * 100, 50.0), index=series.index)
 
 # ─── CHARTS ──────────────────────────────────────────────────────────────────────
 _T = dict(
@@ -245,17 +239,14 @@ _T = dict(
 )
 _AX = dict(gridcolor="#21262d", zeroline=False, showline=True, linecolor="#21262d")
 
-
-def _apply(fig, **kw):
+def _theme(fig, **kw):
     fig.update_layout(**_T, **kw)
     fig.update_xaxes(**_AX)
     fig.update_yaxes(**_AX)
     return fig
 
-
 def chart_net_cot(df, window, nc_label, cm_label):
-    fig = make_subplots(
-        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04,
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04,
         row_heights=[0.38, 0.33, 0.29],
         subplot_titles=[f"Posición Neta — {nc_label}",
                         f"Posición Neta — {cm_label}",
@@ -265,25 +256,20 @@ def chart_net_cot(df, window, nc_label, cm_label):
         marker_color=["#3fb950" if v >= 0 else "#f85149" for v in nc]), row=1, col=1)
     fig.add_trace(go.Scatter(x=df["Date"], y=nc.rolling(4).mean(),
         name="MA 4s", line=dict(color="#f0e68c", width=1.8)), row=1, col=1)
-
     cm = df["Net_CM"]
     fig.add_trace(go.Bar(x=df["Date"], y=cm, name=cm_label, opacity=0.8,
         marker_color=["#79c0ff" if v >= 0 else "#ffa657" for v in cm]), row=2, col=1)
     fig.add_trace(go.Scatter(x=df["Date"], y=cm.rolling(4).mean(),
         name="MA 4s (H)", line=dict(color="#d2a8ff", width=1.8)), row=2, col=1)
-
     ci = cot_index(nc, window=window)
-    fig.add_hrect(y0=75, y1=100, fillcolor="#3fb950", opacity=0.07,
-                  layer="below", line_width=0, row=3, col=1)
-    fig.add_hrect(y0=0, y1=25,   fillcolor="#f85149", opacity=0.07,
-                  layer="below", line_width=0, row=3, col=1)
+    fig.add_hrect(y0=75, y1=100, fillcolor="#3fb950", opacity=0.07, layer="below", line_width=0, row=3, col=1)
+    fig.add_hrect(y0=0,  y1=25,  fillcolor="#f85149", opacity=0.07, layer="below", line_width=0, row=3, col=1)
     fig.add_trace(go.Scatter(x=df["Date"], y=ci, name=f"COT Idx ({window}w)",
         line=dict(color="#58a6ff", width=2),
         fill="tozeroy", fillcolor="rgba(88,166,255,0.07)"), row=3, col=1)
     for lvl, color in [(75,"#3fb950"),(50,"#8b949e"),(25,"#f85149")]:
         fig.add_hline(y=lvl, line=dict(color=color, dash="dash", width=1), row=3, col=1)
-
-    _apply(fig, height=620)
+    _theme(fig, height=620)
     fig.update_yaxes(title_text="Contratos", row=1, col=1, **_AX)
     fig.update_yaxes(title_text="Contratos", row=2, col=1, **_AX)
     fig.update_yaxes(title_text="0 – 100",   row=3, col=1, range=[0,100], **_AX)
@@ -291,25 +277,21 @@ def chart_net_cot(df, window, nc_label, cm_label):
         ann.font.update(family="IBM Plex Mono", size=11, color="#8b949e")
     return fig
 
-
 def chart_gross(df, nc_label, cm_label):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["Date"], y=df["NC_Long"],  name=f"{nc_label} Long",  line=dict(color="#3fb950", width=1.5)))
     fig.add_trace(go.Scatter(x=df["Date"], y=df["NC_Short"], name=f"{nc_label} Short", line=dict(color="#f85149", width=1.5)))
     fig.add_trace(go.Scatter(x=df["Date"], y=df["CM_Long"],  name=f"{cm_label} Long",  line=dict(color="#79c0ff", width=1.5, dash="dot")))
     fig.add_trace(go.Scatter(x=df["Date"], y=df["CM_Short"], name=f"{cm_label} Short", line=dict(color="#ffa657", width=1.5, dash="dot")))
-    return _apply(fig, yaxis_title="Contratos")
-
+    return _theme(fig, yaxis_title="Contratos")
 
 def chart_oi(df):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["Date"], y=df["OI"], name="Open Interest",
-        fill="tozeroy", line=dict(color="#58a6ff", width=2),
-        fillcolor="rgba(88,166,255,0.09)"))
+        fill="tozeroy", line=dict(color="#58a6ff", width=2), fillcolor="rgba(88,166,255,0.09)"))
     fig.add_trace(go.Scatter(x=df["Date"], y=df["OI"].rolling(13).mean(),
         name="MA 13w", line=dict(color="#ffa657", width=1.5, dash="dash")))
-    return _apply(fig, yaxis_title="Contratos")
-
+    return _theme(fig, yaxis_title="Contratos")
 
 def chart_donut(df):
     lat = df.iloc[-1]
@@ -322,26 +304,23 @@ def chart_donut(df):
         textfont=dict(family="IBM Plex Mono", size=11, color="#e6edf3"),
         hovertemplate="<b>%{label}</b><br>%{value:,.0f} contratos<br>%{percent}<extra></extra>",
     ))
-    return _apply(fig, height=320, showlegend=True)
+    return _theme(fig, height=320, showlegend=True)
 
-# ─── SIGNALS ─────────────────────────────────────────────────────────────────────
 def signals(df, window):
     if len(df) < 6:
         return {}
     lat, prv = df.iloc[-1], df.iloc[-6]
     ci = cot_index(df["Net_NC"], window).iloc[-1]
     oi_chg = (lat["OI"] - prv["OI"]) / prv["OI"] * 100 if prv["OI"] else 0
-    sig, cls = (("ALCISTA","signal-bull") if ci >= 75
-                else ("BAJISTA","signal-bear") if ci <= 25
-                else ("NEUTRAL","signal-neutral"))
-    return dict(
-        signal=sig, signal_cls=cls,
-        nc_net=lat["Net_NC"], cm_net=lat["Net_CM"],
-        nc_trend="↑ Subiendo" if lat["Net_NC"] > prv["Net_NC"] else "↓ Bajando",
-        cm_trend="↑ Subiendo" if lat["Net_CM"] > prv["Net_CM"] else "↓ Bajando",
-        cot_index=ci, oi=lat["OI"], oi_change=oi_chg,
-        last_date=lat["Date"].strftime("%d %b %Y"),
-    )
+    sig, cls = (("ALCISTA","signal-bull") if ci >= 75 else
+                ("BAJISTA","signal-bear") if ci <= 25 else
+                ("NEUTRAL","signal-neutral"))
+    return dict(signal=sig, signal_cls=cls,
+                nc_net=lat["Net_NC"], cm_net=lat["Net_CM"],
+                nc_trend="↑ Subiendo" if lat["Net_NC"] > prv["Net_NC"] else "↓ Bajando",
+                cm_trend="↑ Subiendo" if lat["Net_CM"] > prv["Net_CM"] else "↓ Bajando",
+                cot_index=ci, oi=lat["OI"], oi_change=oi_chg,
+                last_date=lat["Date"].strftime("%d %b %Y"))
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -362,84 +341,88 @@ with st.sidebar:
 # ─── MAIN ────────────────────────────────────────────────────────────────────────
 market_search = MARKETS.get(market_key)
 if market_search is None:
-    st.info("Selecciona un mercado del sidebar para comenzar.")
+    st.info("Selecciona un mercado del sidebar.")
     st.stop()
 
 rcfg = REPORTS[report_key]
-current_year = datetime.now().year
-years = list(range(current_year - years_back + 1, current_year + 1))
+cy = datetime.now().year
 
-st.markdown(f"<div class='main-title'>📊 Commitment of Traders</div>", unsafe_allow_html=True)
+# ── FIX: garantizar mínimo 2 años para no depender solo del año actual
+# El CFTC publica zips anuales; el zip del año en curso puede estar incompleto
+min_years = max(years_back, 2)
+years = list(range(cy - min_years + 1, cy + 1))
+
+st.markdown("<div class='main-title'>📊 Commitment of Traders</div>", unsafe_allow_html=True)
 st.markdown(f"<div class='subtitle'>CFTC · {market_key.strip()} · {report_key} · COT window {cot_win}w</div>",
             unsafe_allow_html=True)
 
-with st.spinner("⟳  Descargando datos del CFTC..."):
-    raw = load_cot(years, rcfg["prefix"])
-    df  = parse_cot(raw, market_search, rcfg)
+# ── Descarga con logs visibles
+with st.spinner(f"⟳  Descargando datos CFTC ({years[0]}–{years[-1]})..."):
+    raw, download_logs = load_cot(years, rcfg["prefix"])
+    df = parse_cot(raw, market_search, rcfg)
 
-# ── Error con diagnóstico ──────────────────────────────────────────────────────
+# ── Siempre mostrar log de descarga (colapsado por defecto si hay datos)
+has_data = not df.empty
+with st.expander("📡  Log de descarga CFTC", expanded=not has_data):
+    for log in download_logs:
+        st.markdown(f"`{log}`")
+    if not raw.empty:
+        st.markdown(f"`Total filas descargadas: {len(raw):,}`")
+        nc = _name_col(raw)
+        if nc:
+            n_markets = raw[nc].nunique()
+            st.markdown(f"`Mercados en este reporte: {n_markets}`")
+
+# ── Error con diagnóstico
 if df.empty:
-    st.markdown(f"""<div class='warn-box'>
-    ⚠️ <strong>Sin datos</strong> para <em>{market_key}</em> con <em>{report_key}</em>.<br><br>
-    <strong>Guía de reporte por activo:</strong><br>
-    • <strong>Forex, Gold, Silver, Oil, Bonds</strong> → Legacy — Futures Only<br>
-    • <strong>S&P 500, Nasdaq, Dow, Russell</strong> → Financial TFF — Futures Only<br>
-    • <strong>Corn, Wheat, Soybeans, Copper</strong> → Disaggregated — Futures Only
-    </div>""", unsafe_allow_html=True)
+    st.error(f"**Sin datos** para `{market_search}` en reporte `{report_key}`.")
 
     if not raw.empty:
         avail = available_markets(raw)
-        if avail:
-            with st.expander(f"🔍  Explorar los {len(avail)} mercados disponibles en este reporte", expanded=True):
-                q = st.text_input("Buscar:", placeholder="e.g. EURO, GOLD, S&P...")
-                hits = [m for m in avail if q.upper() in m.upper()] if q else avail
-                for m in hits[:120]:
-                    st.text(m)
+        st.markdown(f"**{len(avail)} mercados disponibles** en este reporte. Busca el tuyo:")
+        q = st.text_input("🔍 Filtrar:", placeholder="e.g. EURO, PESO, GOLD, S&P...")
+        hits = [m for m in avail if q.upper() in m.upper()] if q else avail
+        st.dataframe(pd.DataFrame({"Nombre exacto en CFTC": hits[:200]}), use_container_width=True)
+    else:
+        st.warning("No se descargaron datos. Revisa el log de descarga ↑ para ver el error exacto.")
     st.stop()
 
-# ── KPIs ──────────────────────────────────────────────────────────────────────
+# ── KPIs
 s = signals(df, cot_win)
 st.markdown("<div class='section-header'>Resumen de Posicionamiento</div>", unsafe_allow_html=True)
 c1,c2,c3,c4,c5 = st.columns(5)
-
 with c1:
-    st.markdown(f"""<div class='metric-card'>
-        <div class='metric-label'>Señal COT</div>
+    st.markdown(f"""<div class='metric-card'><div class='metric-label'>Señal COT</div>
         <div style='padding:4px 0'><span class='{s["signal_cls"]}'>{s["signal"]}</span></div>
         <div class='metric-delta neutral'>{s["last_date"]}</div></div>""", unsafe_allow_html=True)
 with c2:
     v=s["nc_net"]; cls="positive" if v>0 else "negative"
-    st.markdown(f"""<div class='metric-card'>
-        <div class='metric-label'>Spec Net</div>
+    st.markdown(f"""<div class='metric-card'><div class='metric-label'>Spec Net</div>
         <div class='metric-value {cls}'>{v:+,.0f}</div>
         <div class='metric-delta neutral'>{s["nc_trend"]}</div></div>""", unsafe_allow_html=True)
 with c3:
     v=s["cm_net"]; cls="positive" if v>0 else "negative"
-    st.markdown(f"""<div class='metric-card'>
-        <div class='metric-label'>Hedger Net</div>
+    st.markdown(f"""<div class='metric-card'><div class='metric-label'>Hedger Net</div>
         <div class='metric-value {cls}'>{v:+,.0f}</div>
         <div class='metric-delta neutral'>{s["cm_trend"]}</div></div>""", unsafe_allow_html=True)
 with c4:
-    idx=s["cot_index"]; cls="positive" if idx>66 else ("negative" if idx<33 else "neutral")
-    st.markdown(f"""<div class='metric-card'>
-        <div class='metric-label'>COT Index</div>
+    idx=s["cot_index"]; cls="positive" if idx>66 else("negative" if idx<33 else "neutral")
+    st.markdown(f"""<div class='metric-card'><div class='metric-label'>COT Index</div>
         <div class='metric-value {cls}'>{idx:.1f}</div>
         <div class='metric-delta neutral'>Ventana {cot_win}w</div></div>""", unsafe_allow_html=True)
 with c5:
     oi=s["oi"]; oic=s["oi_change"]; cls="positive" if oic>0 else "negative"
-    st.markdown(f"""<div class='metric-card'>
-        <div class='metric-label'>Open Interest</div>
+    st.markdown(f"""<div class='metric-card'><div class='metric-label'>Open Interest</div>
         <div class='metric-value neutral'>{oi:,.0f}</div>
         <div class='metric-delta {cls}'>{oic:+.1f}% (5s)</div></div>""", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Charts ────────────────────────────────────────────────────────────────────
 st.markdown("<div class='section-header'>Posiciones Netas & COT Index</div>", unsafe_allow_html=True)
 st.plotly_chart(chart_net_cot(df, cot_win, rcfg["nc_label"], rcfg["cm_label"]),
                 use_container_width=True, config={"displayModeBar": False})
 
-col_l, col_r = st.columns([2, 1])
+col_l, col_r = st.columns([2,1])
 with col_l:
     st.markdown("<div class='section-header'>Posiciones Brutas</div>", unsafe_allow_html=True)
     st.plotly_chart(chart_gross(df, rcfg["nc_label"], rcfg["cm_label"]),
@@ -459,5 +442,4 @@ with st.expander("📋  Datos crudos"):
 
 st.markdown("---")
 st.markdown("""<div style='text-align:center;font-family:IBM Plex Mono;font-size:.68rem;color:#8b949e'>
-Datos públicos CFTC · Actualización semanal (viernes) · Solo informativo, no es asesoramiento financiero
-</div>""", unsafe_allow_html=True)
+Datos públicos CFTC · Actualización semanal (viernes) · Solo informativo</div>""", unsafe_allow_html=True)
