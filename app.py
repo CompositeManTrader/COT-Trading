@@ -206,7 +206,7 @@ def parse_cot(df: pd.DataFrame, market_search: str, rcfg: dict) -> pd.DataFrame:
     if df_m.empty:
         return pd.DataFrame()
 
-    df_m["Date"] = pd.to_datetime(df_m[dc], infer_datetime_format=True, errors="coerce")
+    df_m["Date"] = pd.to_datetime(df_m[dc], errors="coerce")
     df_m = df_m.dropna(subset=["Date"]).sort_values("Date").drop_duplicates("Date")
 
     def _n(col):
