@@ -1,6 +1,17 @@
 """
-COT Dashboard — Commitment of Traders Visualizer  v3
+COT Dashboard — Commitment of Traders Visualizer  v4
 Fuente: CFTC (Commodity Futures Trading Commission)
+
+Fixes v4 (definitivos):
+- URL base correcta: https://cftc.gov/ (sin www)
+- Prefijos correctos verificados via cot-reports package:
+    Legacy fut     → deacot{year}.zip
+    Legacy futopt  → deahistfo{year}.zip
+    Disaggregated  → fut_disagg_txt_{year}.zip
+    Financial TFF  → fut_fin_txt_{year}.zip
+- Columnas correctas por tipo de reporte
+- Mínimo 2 años garantizado
+- Log de descarga siempre visible
 """
 
 import streamlit as st
@@ -40,52 +51,57 @@ html,body,[class*="css"]{font-family:'IBM Plex Sans',sans-serif;}
 """, unsafe_allow_html=True)
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────────
-CFTC_BASE = "https://www.cftc.gov/files/dea/history"
+# URL base SIN www — verificado via cot-reports package source
+CFTC_BASE = "https://cftc.gov/files/dea/history"
 
 REPORTS = {
     "Legacy — Futures Only": {
-        "prefix": "fut_xls",
-        "long_nc": "Noncommercial_Positions_Long_All",
+        # URL real: https://cftc.gov/files/dea/history/deacot{year}.zip
+        "prefix":   "deacot",
+        "long_nc":  "Noncommercial_Positions_Long_All",
         "short_nc": "Noncommercial_Positions_Short_All",
-        "long_cm": "Commercial_Positions_Long_All",
+        "long_cm":  "Commercial_Positions_Long_All",
         "short_cm": "Commercial_Positions_Short_All",
-        "long_nr": "Nonrept_Positions_Long_All",
+        "long_nr":  "Nonrept_Positions_Long_All",
         "short_nr": "Nonrept_Positions_Short_All",
         "nc_label": "Non-Commercial (Specs)",
         "cm_label": "Commercial (Hedgers)",
         "description": "Reporte clásico. Cubre <strong>Forex, Commodities y Bonos</strong>.",
     },
     "Legacy — Combined (Futures+Options)": {
-        "prefix": "com_xls",
-        "long_nc": "Noncommercial_Positions_Long_All",
+        # URL real: https://cftc.gov/files/dea/history/deahistfo{year}.zip
+        "prefix":   "deahistfo",
+        "long_nc":  "Noncommercial_Positions_Long_All",
         "short_nc": "Noncommercial_Positions_Short_All",
-        "long_cm": "Commercial_Positions_Long_All",
+        "long_cm":  "Commercial_Positions_Long_All",
         "short_cm": "Commercial_Positions_Short_All",
-        "long_nr": "Nonrept_Positions_Long_All",
+        "long_nr":  "Nonrept_Positions_Long_All",
         "short_nr": "Nonrept_Positions_Short_All",
         "nc_label": "Non-Commercial (Specs)",
         "cm_label": "Commercial (Hedgers)",
         "description": "Legacy combinado futuros + opciones.",
     },
     "Disaggregated — Futures Only": {
-        "prefix": "fut_disagg_txt",
-        "long_nc": "M_Money_Positions_Long_All",
+        # URL real: https://cftc.gov/files/dea/history/fut_disagg_txt_{year}.zip
+        "prefix":   "fut_disagg_txt_",
+        "long_nc":  "M_Money_Positions_Long_All",
         "short_nc": "M_Money_Positions_Short_All",
-        "long_cm": "Prod_Merc_Positions_Long_All",
+        "long_cm":  "Prod_Merc_Positions_Long_All",
         "short_cm": "Prod_Merc_Positions_Short_All",
-        "long_nr": "NonRept_Positions_Long_All",
+        "long_nr":  "NonRept_Positions_Long_All",
         "short_nr": "NonRept_Positions_Short_All",
         "nc_label": "Managed Money (Specs)",
         "cm_label": "Prod/Merchants (Hedgers)",
         "description": "Desglosa más categorías. Ideal para <strong>energía, metales y granos</strong>.",
     },
     "Financial TFF — Futures Only": {
-        "prefix": "fut_fin_txt",
-        "long_nc": "Lev_Money_Positions_Long_All",
+        # URL real: https://cftc.gov/files/dea/history/fut_fin_txt_{year}.zip
+        "prefix":   "fut_fin_txt_",
+        "long_nc":  "Lev_Money_Positions_Long_All",
         "short_nc": "Lev_Money_Positions_Short_All",
-        "long_cm": "Asset_Mgr_Positions_Long_All",
+        "long_cm":  "Asset_Mgr_Positions_Long_All",
         "short_cm": "Asset_Mgr_Positions_Short_All",
-        "long_nr": "Other_Rept_Positions_Long_All",
+        "long_nr":  "Other_Rept_Positions_Long_All",
         "short_nr": "Other_Rept_Positions_Short_All",
         "nc_label": "Leveraged Money (Specs)",
         "cm_label": "Asset Managers",
@@ -125,7 +141,6 @@ MARKETS = {
     "30Y T-Bond":                "U.S. TREASURY BONDS",
 }
 
-# ─── DATA ────────────────────────────────────────────────────────────────────────
 HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                    "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -133,30 +148,30 @@ HEADERS = {
     "Accept": "application/zip,*/*",
 }
 
+# ─── DATA ────────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_year(year: int, prefix: str) -> tuple[pd.DataFrame, str]:
-    """Returns (dataframe, status_message)."""
-    url = f"{CFTC_BASE}/{prefix}_{year}.zip"
+def fetch_year(year: int, prefix: str) -> tuple:
+    url = f"{CFTC_BASE}/{prefix}{year}.zip"
     try:
         r = requests.get(url, headers=HEADERS, timeout=60)
         if r.status_code == 404:
-            return pd.DataFrame(), f"⚠️ {year}: archivo no publicado aún (404)"
+            return pd.DataFrame(), f"⚠️ {year}: 404 — {url}"
         if r.status_code != 200:
-            return pd.DataFrame(), f"❌ {year}: HTTP {r.status_code}"
+            return pd.DataFrame(), f"❌ {year}: HTTP {r.status_code} — {url}"
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
             fname = sorted(z.namelist())[-1]
             with z.open(fname) as f:
                 df = pd.read_csv(f, low_memory=False)
-        return df, f"✅ {year}: {len(df):,} filas descargadas"
+        return df, f"✅ {year}: {len(df):,} filas — {url}"
     except requests.exceptions.ConnectionError as e:
-        return pd.DataFrame(), f"❌ {year}: Error de conexión — {str(e)[:120]}"
+        return pd.DataFrame(), f"❌ {year}: Conexión fallida — {str(e)[:100]}"
     except zipfile.BadZipFile:
-        return pd.DataFrame(), f"❌ {year}: El archivo descargado no es un ZIP válido"
+        return pd.DataFrame(), f"❌ {year}: ZIP inválido (posible HTML de error) — {url}"
     except Exception as e:
-        return pd.DataFrame(), f"❌ {year}: {type(e).__name__} — {str(e)[:120]}"
+        return pd.DataFrame(), f"❌ {year}: {type(e).__name__}: {str(e)[:100]}"
 
 
-def load_cot(years: list, prefix: str) -> tuple[pd.DataFrame, list]:
+def load_cot(years: list, prefix: str) -> tuple:
     frames, logs = [], []
     for y in years:
         df, msg = fetch_year(y, prefix)
@@ -193,34 +208,27 @@ def parse_cot(df: pd.DataFrame, market_search: str, rcfg: dict) -> pd.DataFrame:
     nc, dc = _name_col(df), _date_col(df)
     if not nc or not dc:
         return pd.DataFrame()
-
     tokens = [t for t in market_search.upper().split() if len(t) > 1]
     mask = df[nc].str.upper().apply(
         lambda x: all(t in str(x) for t in tokens) if pd.notna(x) else False)
     df_m = df[mask].copy()
     if df_m.empty:
         return pd.DataFrame()
-
     df_m["Date"] = pd.to_datetime(df_m[dc], errors="coerce")
     df_m = df_m.dropna(subset=["Date"]).sort_values("Date").drop_duplicates("Date")
 
     def _n(col):
         return pd.to_numeric(df_m.get(col, pd.Series(np.nan, index=df_m.index)), errors="coerce")
 
-    df_m["OI"]       = _n("Open_Interest_All")
-    df_m["NC_Long"]  = _n(rcfg["long_nc"])
-    df_m["NC_Short"] = _n(rcfg["short_nc"])
-    df_m["CM_Long"]  = _n(rcfg["long_cm"])
-    df_m["CM_Short"] = _n(rcfg["short_cm"])
-    df_m["NR_Long"]  = _n(rcfg["long_nr"])
-    df_m["NR_Short"] = _n(rcfg["short_nr"])
-    df_m["Net_NC"]   = df_m["NC_Long"]  - df_m["NC_Short"]
-    df_m["Net_CM"]   = df_m["CM_Long"]  - df_m["CM_Short"]
-    df_m["Net_NR"]   = df_m["NR_Long"]  - df_m["NR_Short"]
-
-    keep = ["Date","OI","NC_Long","NC_Short","Net_NC",
-            "CM_Long","CM_Short","Net_CM","NR_Long","NR_Short","Net_NR"]
-    return df_m[keep].reset_index(drop=True)
+    df_m["OI"]      = _n("Open_Interest_All")
+    df_m["NC_Long"] = _n(rcfg["long_nc"]);  df_m["NC_Short"] = _n(rcfg["short_nc"])
+    df_m["CM_Long"] = _n(rcfg["long_cm"]);  df_m["CM_Short"] = _n(rcfg["short_cm"])
+    df_m["NR_Long"] = _n(rcfg["long_nr"]);  df_m["NR_Short"] = _n(rcfg["short_nr"])
+    df_m["Net_NC"]  = df_m["NC_Long"] - df_m["NC_Short"]
+    df_m["Net_CM"]  = df_m["CM_Long"] - df_m["CM_Short"]
+    df_m["Net_NR"]  = df_m["NR_Long"] - df_m["NR_Short"]
+    return df_m[["Date","OI","NC_Long","NC_Short","Net_NC",
+                 "CM_Long","CM_Short","Net_CM","NR_Long","NR_Short","Net_NR"]].reset_index(drop=True)
 
 
 def cot_index(series: pd.Series, window: int = 52) -> pd.Series:
@@ -230,27 +238,21 @@ def cot_index(series: pd.Series, window: int = 52) -> pd.Series:
     return pd.Series(np.where(rng != 0, (series - mn) / rng * 100, 50.0), index=series.index)
 
 # ─── CHARTS ──────────────────────────────────────────────────────────────────────
-_T = dict(
-    paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
-    font=dict(family="IBM Plex Mono", color="#8b949e", size=11),
-    legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="#21262d", borderwidth=1,
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    margin=dict(l=10, r=10, t=36, b=10), hovermode="x unified",
-)
+_T = dict(paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
+          font=dict(family="IBM Plex Mono", color="#8b949e", size=11),
+          legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="#21262d", borderwidth=1,
+                      orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+          margin=dict(l=10, r=10, t=36, b=10), hovermode="x unified")
 _AX = dict(gridcolor="#21262d", zeroline=False, showline=True, linecolor="#21262d")
 
 def _theme(fig, **kw):
-    fig.update_layout(**_T, **kw)
-    fig.update_xaxes(**_AX)
-    fig.update_yaxes(**_AX)
+    fig.update_layout(**_T, **kw); fig.update_xaxes(**_AX); fig.update_yaxes(**_AX)
     return fig
 
 def chart_net_cot(df, window, nc_label, cm_label):
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04,
         row_heights=[0.38, 0.33, 0.29],
-        subplot_titles=[f"Posición Neta — {nc_label}",
-                        f"Posición Neta — {cm_label}",
-                        "COT Index (especuladores)"])
+        subplot_titles=[f"Posición Neta — {nc_label}", f"Posición Neta — {cm_label}", "COT Index"])
     nc = df["Net_NC"]
     fig.add_trace(go.Bar(x=df["Date"], y=nc, name=nc_label, opacity=0.8,
         marker_color=["#3fb950" if v >= 0 else "#f85149" for v in nc]), row=1, col=1)
@@ -265,14 +267,13 @@ def chart_net_cot(df, window, nc_label, cm_label):
     fig.add_hrect(y0=75, y1=100, fillcolor="#3fb950", opacity=0.07, layer="below", line_width=0, row=3, col=1)
     fig.add_hrect(y0=0,  y1=25,  fillcolor="#f85149", opacity=0.07, layer="below", line_width=0, row=3, col=1)
     fig.add_trace(go.Scatter(x=df["Date"], y=ci, name=f"COT Idx ({window}w)",
-        line=dict(color="#58a6ff", width=2),
-        fill="tozeroy", fillcolor="rgba(88,166,255,0.07)"), row=3, col=1)
+        line=dict(color="#58a6ff", width=2), fill="tozeroy", fillcolor="rgba(88,166,255,0.07)"), row=3, col=1)
     for lvl, color in [(75,"#3fb950"),(50,"#8b949e"),(25,"#f85149")]:
         fig.add_hline(y=lvl, line=dict(color=color, dash="dash", width=1), row=3, col=1)
     _theme(fig, height=620)
     fig.update_yaxes(title_text="Contratos", row=1, col=1, **_AX)
     fig.update_yaxes(title_text="Contratos", row=2, col=1, **_AX)
-    fig.update_yaxes(title_text="0 – 100",   row=3, col=1, range=[0,100], **_AX)
+    fig.update_yaxes(title_text="0–100", row=3, col=1, range=[0,100], **_AX)
     for ann in fig.layout.annotations:
         ann.font.update(family="IBM Plex Mono", size=11, color="#8b949e")
     return fig
@@ -302,8 +303,7 @@ def chart_donut(df):
         marker=dict(colors=["#3fb950","#f85149","#79c0ff","#ffa657"],
                     line=dict(color="#0d1117", width=2)),
         textfont=dict(family="IBM Plex Mono", size=11, color="#e6edf3"),
-        hovertemplate="<b>%{label}</b><br>%{value:,.0f} contratos<br>%{percent}<extra></extra>",
-    ))
+        hovertemplate="<b>%{label}</b><br>%{value:,.0f} contratos<br>%{percent}<extra></extra>"))
     return _theme(fig, height=320, showlegend=True)
 
 def signals(df, window):
@@ -313,8 +313,7 @@ def signals(df, window):
     ci = cot_index(df["Net_NC"], window).iloc[-1]
     oi_chg = (lat["OI"] - prv["OI"]) / prv["OI"] * 100 if prv["OI"] else 0
     sig, cls = (("ALCISTA","signal-bull") if ci >= 75 else
-                ("BAJISTA","signal-bear") if ci <= 25 else
-                ("NEUTRAL","signal-neutral"))
+                ("BAJISTA","signal-bear") if ci <= 25 else ("NEUTRAL","signal-neutral"))
     return dict(signal=sig, signal_cls=cls,
                 nc_net=lat["Net_NC"], cm_net=lat["Net_CM"],
                 nc_trend="↑ Subiendo" if lat["Net_NC"] > prv["Net_NC"] else "↓ Bajando",
@@ -346,9 +345,6 @@ if market_search is None:
 
 rcfg = REPORTS[report_key]
 cy = datetime.now().year
-
-# ── FIX: garantizar mínimo 2 años para no depender solo del año actual
-# El CFTC publica zips anuales; el zip del año en curso puede estar incompleto
 min_years = max(years_back, 2)
 years = list(range(cy - min_years + 1, cy + 1))
 
@@ -356,38 +352,30 @@ st.markdown("<div class='main-title'>📊 Commitment of Traders</div>", unsafe_a
 st.markdown(f"<div class='subtitle'>CFTC · {market_key.strip()} · {report_key} · COT window {cot_win}w</div>",
             unsafe_allow_html=True)
 
-# ── Descarga con logs visibles
 with st.spinner(f"⟳  Descargando datos CFTC ({years[0]}–{years[-1]})..."):
     raw, download_logs = load_cot(years, rcfg["prefix"])
     df = parse_cot(raw, market_search, rcfg)
 
-# ── Siempre mostrar log de descarga (colapsado por defecto si hay datos)
 has_data = not df.empty
 with st.expander("📡  Log de descarga CFTC", expanded=not has_data):
     for log in download_logs:
         st.markdown(f"`{log}`")
     if not raw.empty:
-        st.markdown(f"`Total filas descargadas: {len(raw):,}`")
-        nc = _name_col(raw)
-        if nc:
-            n_markets = raw[nc].nunique()
-            st.markdown(f"`Mercados en este reporte: {n_markets}`")
+        st.markdown(f"`Total filas: {len(raw):,} · Mercados disponibles: {raw[_name_col(raw)].nunique() if _name_col(raw) else '?'}`")
 
-# ── Error con diagnóstico
 if df.empty:
-    st.error(f"**Sin datos** para `{market_search}` en reporte `{report_key}`.")
-
+    st.error(f"**Sin datos** para `{market_search}` en `{report_key}`.")
     if not raw.empty:
         avail = available_markets(raw)
-        st.markdown(f"**{len(avail)} mercados disponibles** en este reporte. Busca el tuyo:")
-        q = st.text_input("🔍 Filtrar:", placeholder="e.g. EURO, PESO, GOLD, S&P...")
+        st.markdown(f"**{len(avail)} mercados disponibles** — busca el nombre exacto:")
+        q = st.text_input("🔍 Filtrar:", placeholder="EURO, PESO, GOLD, S&P...")
         hits = [m for m in avail if q.upper() in m.upper()] if q else avail
-        st.dataframe(pd.DataFrame({"Nombre exacto en CFTC": hits[:200]}), use_container_width=True)
+        st.dataframe(pd.DataFrame({"Nombre en CFTC": hits[:200]}), use_container_width=True)
     else:
-        st.warning("No se descargaron datos. Revisa el log de descarga ↑ para ver el error exacto.")
+        st.warning("Descarga fallida. Revisa el log ↑ para el error exacto.")
     st.stop()
 
-# ── KPIs
+# ── KPIs ──────────────────────────────────────────────────────────────────────────
 s = signals(df, cot_win)
 st.markdown("<div class='section-header'>Resumen de Posicionamiento</div>", unsafe_allow_html=True)
 c1,c2,c3,c4,c5 = st.columns(5)
@@ -442,4 +430,5 @@ with st.expander("📋  Datos crudos"):
 
 st.markdown("---")
 st.markdown("""<div style='text-align:center;font-family:IBM Plex Mono;font-size:.68rem;color:#8b949e'>
-Datos públicos CFTC · Actualización semanal (viernes) · Solo informativo</div>""", unsafe_allow_html=True)
+Datos públicos CFTC · Actualización semanal (viernes) · Solo informativo</div>""",
+            unsafe_allow_html=True)
