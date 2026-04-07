@@ -118,7 +118,7 @@ REPORTS = {
 MARKETS = {
     "— FOREX —": None,
     "EUR/USD  ·  Euro FX":          "EURO FX",
-    "GBP/USD  ·  British Pound":    "BRITISH POUND STERLING",
+    "GBP/USD  ·  British Pound":    "BRITISH POUND",
     "JPY/USD  ·  Japanese Yen":     "JAPANESE YEN",
     "CHF/USD  ·  Swiss Franc":      "SWISS FRANC",
     "AUD/USD  ·  Australian $":     "AUSTRALIAN DOLLAR",
@@ -129,7 +129,7 @@ MARKETS = {
     "S&P 500":                      "S&P 500 STOCK INDEX",
     "Nasdaq-100":                   "NASDAQ-100 STOCK INDEX",
     "Dow Jones Industrial":         "DOW JONES INDUSTRIAL AVG",
-    "Russell 2000":                 "RUSSELL 2000 MINI",
+    "Russell 2000":                 "RUSSELL 2000",
     "— COMMODITIES ENERGÍA —": None,
     "Crude Oil (WTI)":              "CRUDE OIL, LIGHT SWEET",
     "Natural Gas":                  "NATURAL GAS",
@@ -390,7 +390,7 @@ if df.empty:
     if not raw.empty:
         avail = available_markets(raw)
         if avail:
-            with st.expander(f"🔍  Explorar los {len(avail)} mercados disponibles en este reporte"):
+            with st.expander(f"🔍  Explorar los {len(avail)} mercados disponibles en este reporte", expanded=True):
                 q = st.text_input("Buscar:", placeholder="e.g. EURO, GOLD, S&P...")
                 hits = [m for m in avail if q.upper() in m.upper()] if q else avail
                 for m in hits[:120]:
