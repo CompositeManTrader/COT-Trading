@@ -109,36 +109,37 @@ REPORTS = {
     },
 }
 
+# Nombres EXACTOS verificados contra datos reales del CFTC (deacot*.zip)
 MARKETS = {
-    "— FOREX —": None,
-    "EUR/USD  ·  Euro FX":       "EURO FX",
-    "GBP/USD  ·  British Pound": "BRITISH POUND",
-    "JPY/USD  ·  Japanese Yen":  "JAPANESE YEN",
-    "CHF/USD  ·  Swiss Franc":   "SWISS FRANC",
-    "AUD/USD  ·  Australian $":  "AUSTRALIAN DOLLAR",
-    "CAD/USD  ·  Canadian $":    "CANADIAN DOLLAR",
-    "NZD/USD  ·  New Zealand $": "NEW ZEALAND DOLLAR",
-    "MXN/USD  ·  Peso Mexicano": "MEXICAN PESO",
-    "— ÍNDICES BURSÁTILES —": None,
-    "S&P 500":                   "S&P 500 STOCK INDEX",
-    "Nasdaq-100":                "NASDAQ-100 STOCK INDEX",
-    "Dow Jones Industrial":      "DOW JONES INDUSTRIAL AVG",
-    "Russell 2000":              "RUSSELL 2000",
-    "— ENERGÍA —": None,
-    "Crude Oil (WTI)":           "CRUDE OIL, LIGHT SWEET",
-    "Natural Gas":               "NATURAL GAS",
-    "— METALES —": None,
-    "Gold":                      "GOLD",
-    "Silver":                    "SILVER",
-    "Copper":                    "COPPER",
-    "— GRANOS —": None,
-    "Corn":                      "CORN",
-    "Wheat (CBOT)":              "WHEAT",
-    "Soybeans":                  "SOYBEANS",
-    "— TASAS DE INTERÉS —": None,
-    "10Y T-Note":                "10-YEAR U.S. TREASURY NOTES",
-    "2Y T-Note":                 "2-YEAR U.S. TREASURY NOTES",
-    "30Y T-Bond":                "U.S. TREASURY BONDS",
+    "— FOREX (Legacy — Futures Only) —": None,
+    "EUR/USD  ·  Euro FX":       "EURO FX - CHICAGO MERCANTILE EXCHANGE",
+    "GBP/USD  ·  British Pound": "BRITISH POUND - CHICAGO MERCANTILE EXCHANGE",
+    "JPY/USD  ·  Japanese Yen":  "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE",
+    "CHF/USD  ·  Swiss Franc":   "SWISS FRANC - CHICAGO MERCANTILE EXCHANGE",
+    "AUD/USD  ·  Australian $":  "AUSTRALIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
+    "CAD/USD  ·  Canadian $":    "CANADIAN DOLLAR - CHICAGO MERCANTILE EXCHANGE",
+    "NZD/USD  ·  New Zealand $": "NEW ZEALAND DOLLAR - CHICAGO MERCANTILE EXCHANGE",
+    "MXN/USD  ·  Peso Mexicano": "MEXICAN PESO - CHICAGO MERCANTILE EXCHANGE",
+    "— ÍNDICES (Financial TFF — Futures Only) —": None,
+    "S&P 500":                   "S&P 500 STOCK INDEX - CHICAGO MERCANTILE EXCHANGE",
+    "Nasdaq-100":                "NASDAQ-100 STOCK INDEX (MINI) - CHICAGO MERCANTILE EXCHANGE",
+    "Dow Jones Industrial":      "DOW JONES INDUSTRIAL AVG- x $5 - CHICAGO BOARD OF TRADE",
+    "Russell 2000":              "E-MINI RUSSELL 2000 INDEX - CHICAGO MERCANTILE EXCHANGE",
+    "— ENERGÍA (Legacy — Futures Only) —": None,
+    "Crude Oil (WTI)":           "CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE",
+    "Natural Gas":               "NATURAL GAS - NEW YORK MERCANTILE EXCHANGE",
+    "— METALES (Legacy — Futures Only) —": None,
+    "Gold":                      "GOLD - COMMODITY EXCHANGE INC.",
+    "Silver":                    "SILVER - COMMODITY EXCHANGE INC.",
+    "Copper":                    "COPPER- #1 - COMMODITY EXCHANGE INC.",
+    "— GRANOS (Disaggregated — Futures Only) —": None,
+    "Corn":                      "CORN - CHICAGO BOARD OF TRADE",
+    "Wheat (SRW)":               "WHEAT-SRW - CHICAGO BOARD OF TRADE",
+    "Soybeans":                  "SOYBEANS - CHICAGO BOARD OF TRADE",
+    "— TASAS (Legacy — Futures Only) —": None,
+    "10Y T-Note":                "10-YEAR U.S. TREASURY NOTES - CHICAGO BOARD OF TRADE",
+    "2Y T-Note":                 "2-YEAR U.S. TREASURY NOTES - CHICAGO BOARD OF TRADE",
+    "30Y T-Bond":                "U.S. TREASURY BONDS - CHICAGO BOARD OF TRADE",
 }
 
 HEADERS = {
@@ -208,9 +209,13 @@ def parse_cot(df: pd.DataFrame, market_search: str, rcfg: dict) -> pd.DataFrame:
     nc, dc = _name_col(df), _date_col(df)
     if not nc or not dc:
         return pd.DataFrame()
-    tokens = [t for t in market_search.upper().split() if len(t) > 1]
-    mask = df[nc].str.upper().apply(
-        lambda x: all(t in str(x) for t in tokens) if pd.notna(x) else False)
+    # Exact match (case-insensitive) — names verified against real CFTC data
+    mask = df[nc].str.upper() == market_search.upper()
+    # Fallback to token match if exact match returns nothing
+    if mask.sum() == 0:
+        tokens = [t for t in market_search.upper().split() if len(t) > 1]
+        mask = df[nc].str.upper().apply(
+            lambda x: all(t in str(x) for t in tokens) if pd.notna(x) else False)
     df_m = df[mask].copy()
     if df_m.empty:
         return pd.DataFrame()
@@ -368,7 +373,9 @@ if df.empty:
     if not raw.empty:
         avail = available_markets(raw)
         tokens = [t for t in market_search.upper().split() if len(t) > 1]
-        auto_hits = [m for m in avail if any(t in m.upper() for t in tokens)]
+        auto_hits = [m for m in avail
+                     if m.upper() == market_search.upper()
+                     or any(t in m.upper() for t in tokens)]
         if auto_hits:
             st.markdown(f"#### 🔍 Posibles coincidencias para `{market_search}`")
             st.dataframe(pd.DataFrame({"Nombre exacto en CFTC": auto_hits}), width='stretch')
