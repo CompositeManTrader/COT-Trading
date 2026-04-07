@@ -367,18 +367,22 @@ if df.empty:
     st.error(f"**Sin datos** para `{market_search}` en `{report_key}`.")
     if not raw.empty:
         avail = available_markets(raw)
-        # Auto-filter: show markets containing ANY token of the search string
         tokens = [t for t in market_search.upper().split() if len(t) > 1]
         auto_hits = [m for m in avail if any(t in m.upper() for t in tokens)]
-        st.markdown(f"### 🔍 Candidatos para `{market_search}` ({len(auto_hits)} encontrados)")
         if auto_hits:
-            st.info("Copia el nombre exacto de abajo y actualiza el diccionario MARKETS en app.py")
+            st.markdown(f"#### 🔍 Posibles coincidencias para `{market_search}`")
             st.dataframe(pd.DataFrame({"Nombre exacto en CFTC": auto_hits}), width='stretch')
-        st.markdown(f"**O busca entre los {len(avail)} mercados disponibles:**")
-        q = st.text_input("🔍 Buscar mercado:", placeholder="EURO, PESO, GOLD, S&P...")
-        if q:
-            hits = [m for m in avail if q.upper() in m.upper()]
-            st.dataframe(pd.DataFrame({"Nombre en CFTC": hits[:200]}), width='stretch')
+        st.markdown(f"#### 📋 Todos los mercados ({len(avail)}) — descarga el CSV")
+        csv_all = pd.DataFrame({"market_name": avail}).to_csv(index=False).encode()
+        st.download_button(
+            label=f"⬇️  Descargar lista completa ({len(avail)} mercados)",
+            data=csv_all,
+            file_name="cftc_markets.csv",
+            mime="text/csv",
+        )
+        q = st.text_input("🔍 Filtrar en tiempo real:", placeholder="EURO, PESO, GOLD, S&P, CRUDE...")
+        hits = [m for m in avail if q.upper() in m.upper()] if q else avail
+        st.dataframe(pd.DataFrame({"Nombre en CFTC": hits[:400]}), width='stretch')
     else:
         st.warning("Descarga fallida. Revisa el log ↑ para el error exacto.")
     st.stop()
