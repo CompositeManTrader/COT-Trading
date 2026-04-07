@@ -367,10 +367,18 @@ if df.empty:
     st.error(f"**Sin datos** para `{market_search}` en `{report_key}`.")
     if not raw.empty:
         avail = available_markets(raw)
-        st.markdown(f"**{len(avail)} mercados disponibles** — busca el nombre exacto:")
-        q = st.text_input("🔍 Filtrar:", placeholder="EURO, PESO, GOLD, S&P...")
-        hits = [m for m in avail if q.upper() in m.upper()] if q else avail
-        st.dataframe(pd.DataFrame({"Nombre en CFTC": hits[:200]}), use_container_width=True)
+        # Auto-filter: show markets containing ANY token of the search string
+        tokens = [t for t in market_search.upper().split() if len(t) > 1]
+        auto_hits = [m for m in avail if any(t in m.upper() for t in tokens)]
+        st.markdown(f"### 🔍 Candidatos para `{market_search}` ({len(auto_hits)} encontrados)")
+        if auto_hits:
+            st.info("Copia el nombre exacto de abajo y actualiza el diccionario MARKETS en app.py")
+            st.dataframe(pd.DataFrame({"Nombre exacto en CFTC": auto_hits}), width='stretch')
+        st.markdown(f"**O busca entre los {len(avail)} mercados disponibles:**")
+        q = st.text_input("🔍 Buscar mercado:", placeholder="EURO, PESO, GOLD, S&P...")
+        if q:
+            hits = [m for m in avail if q.upper() in m.upper()]
+            st.dataframe(pd.DataFrame({"Nombre en CFTC": hits[:200]}), width='stretch')
     else:
         st.warning("Descarga fallida. Revisa el log ↑ para el error exacto.")
     st.stop()
@@ -408,25 +416,25 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("<div class='section-header'>Posiciones Netas & COT Index</div>", unsafe_allow_html=True)
 st.plotly_chart(chart_net_cot(df, cot_win, rcfg["nc_label"], rcfg["cm_label"]),
-                use_container_width=True, config={"displayModeBar": False})
+                width='stretch', config={"displayModeBar": False})
 
 col_l, col_r = st.columns([2,1])
 with col_l:
     st.markdown("<div class='section-header'>Posiciones Brutas</div>", unsafe_allow_html=True)
     st.plotly_chart(chart_gross(df, rcfg["nc_label"], rcfg["cm_label"]),
-                    use_container_width=True, config={"displayModeBar": False})
+                    width='stretch', config={"displayModeBar": False})
 with col_r:
     st.markdown("<div class='section-header'>Distribución Actual</div>", unsafe_allow_html=True)
-    st.plotly_chart(chart_donut(df), use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(chart_donut(df), width='stretch', config={"displayModeBar": False})
 
 st.markdown("<div class='section-header'>Open Interest</div>", unsafe_allow_html=True)
-st.plotly_chart(chart_oi(df), use_container_width=True, config={"displayModeBar": False})
+st.plotly_chart(chart_oi(df), width='stretch', config={"displayModeBar": False})
 
 with st.expander("📋  Datos crudos"):
     num_cols = df.select_dtypes("number").columns.tolist()
     st.dataframe(df.sort_values("Date", ascending=False)
                    .style.format({c:"{:,.0f}" for c in num_cols}),
-                 use_container_width=True)
+                 width='stretch')
 
 st.markdown("---")
 st.markdown("""<div style='text-align:center;font-family:IBM Plex Mono;font-size:.68rem;color:#8b949e'>
